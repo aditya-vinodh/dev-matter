@@ -90,3 +90,13 @@ export const respondentsTable = pgTable("respondents", {
   lastName: varchar({ length: 255 }),
   email: varchar({ length: 255 }),
 });
+
+export const devicesTable = pgTable("devices", {
+  id: varchar({ length: 255 }).primaryKey(),
+  userId: integer()
+    .notNull()
+    .references(() => usersTable.id),
+  fcmToken: varchar({ length: 255 }).notNull(),
+  platform: varchar({ length: 255 }).notNull(),
+  createdAt: timestamp().notNull().defaultNow(),
+});

@@ -9,18 +9,22 @@ import {
 import { db } from "./db/index.js";
 import {
   appsTable,
+  devicesTable,
   formResponsesTable,
   formsTable,
   formVersionsTable,
   secretKeysTable,
 } from "./db/schema.js";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import auth from "./routes/auth.js";
 import apps from "./routes/apps.js";
 import forms from "./routes/forms.js";
 import secretKeys from "./routes/secret-keys.js";
 import { hashSecretKey } from "./lib/secret-key.js";
 import z from "zod";
+import { zValidator } from "@hono/zod-validator";
+import { getMessaging } from "firebase-admin/messaging";
+import { firebaseApp } from "./lib/firebase.js";
 
 const app = new Hono<{ Variables: { user: User; session: Session } }>();
 
@@ -40,6 +44,7 @@ app.post("forms/:formId", async (c) => {
     .select({
       id: formsTable.id,
       public: formsTable.public,
+      name: formsTable.name,
       app: { id: appsTable.id, userId: appsTable.userId },
     })
     .from(formsTable)
@@ -164,6 +169,21 @@ app.post("forms/:formId", async (c) => {
     response,
   });
 
+  const ownerDevices = await db
+    .select()
+    .from(devicesTable)
+    .where(eq(devicesTable.userId, form.app.userId));
+  const fcmTokens = ownerDevices.map((device) => device.fcmToken);
+  const message = {
+    notification: {
+      title: "New Form Submission",
+      body: `A new form submission has been received for ${form.name}.`,
+    },
+    tokens: fcmTokens,
+  };
+
+  await getMessaging(firebaseApp).sendEachForMulticast(message);
+
   return c.json({
     message: "success",
   });
@@ -204,6 +224,44 @@ app.use(async (c, next) => {
 
   await next();
 });
+
+app.post(
+  "/fcm-registration",
+  zValidator(
+    "json",
+    z.object({ token: z.string(), deviceId: z.string(), platform: z.string() }),
+  ),
+  async (c) => {
+    const user = c.get("user");
+    const { token, deviceId, platform } = c.req.valid("json");
+
+    const [existingDevice] = await db
+      .select()
+      .from(devicesTable)
+      .where(
+        and(eq(devicesTable.id, deviceId), eq(devicesTable.userId, user.id)),
+      );
+    if (!existingDevice) {
+      await db.insert(devicesTable).values({
+        id: deviceId,
+        userId: user.id,
+        fcmToken: token,
+        platform: platform,
+      });
+    } else {
+      await db
+        .update(devicesTable)
+        .set({ fcmToken: token })
+        .where(
+          and(eq(devicesTable.id, deviceId), eq(devicesTable.userId, user.id)),
+        );
+    }
+
+    return c.json({
+      message: "FCM registration updated",
+    });
+  },
+);
 
 app.route("/", apps);
 app.route("/", forms);

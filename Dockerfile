@@ -19,7 +19,7 @@ FROM node:20-alpine
 WORKDIR /app
 
 # Copy only the built app and necessary files
-COPY --from=builder /app/build ./build
+COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/package*.json ./
 
 # Install only production dependencies
