@@ -79,7 +79,7 @@ export const formResponsesTable = pgTable("form_responses", {
   id: integer().primaryKey().generatedAlwaysAsIdentity(),
   formVersionId: integer()
     .notNull()
-    .references(() => formVersionsTable.id),
+    .references(() => formVersionsTable.id, { onDelete: "cascade" }),
   respondentId: varchar({ length: 255 }),
   archived: boolean().notNull().default(false),
   response: jsonb().notNull(),

@@ -269,6 +269,47 @@ app.patch(
   },
 );
 
+app.delete("/forms/:formId", async (c) => {
+  const formId = parseInt(c.req.param("formId"));
+  const user = c.get("user");
+
+  const [form] = await db
+    .select({
+      id: formsTable.id,
+      name: formsTable.name,
+      public: formsTable.public,
+      appId: formsTable.appId,
+      responseCount: formsTable.responseCount,
+      app: {
+        id: appsTable.id,
+        name: appsTable.name,
+        userId: appsTable.userId,
+        url: appsTable.url,
+      },
+    })
+    .from(formsTable)
+    .where(eq(formsTable.id, formId))
+    .innerJoin(appsTable, eq(appsTable.id, formsTable.appId));
+  if (!form) {
+    c.status(404);
+    return c.json({ error: "not-found", message: "Form not found" });
+  }
+
+  if (form.app.userId !== user.id) {
+    c.status(403);
+    return c.json({
+      error: "forbidden",
+      message: "You are not allowed to access this form",
+    });
+  }
+
+  await db.delete(formsTable).where(eq(formsTable.id, formId));
+
+  return c.json({
+    message: "Form deleted succesfully",
+  });
+});
+
 app.patch(
   "/responses/:responseId",
   zValidator("json", z.object({ archived: z.boolean().optional() })),
