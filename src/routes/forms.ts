@@ -326,4 +326,50 @@ app.patch(
   },
 );
 
+app.delete("/responses/:responseId", async (c) => {
+  const responseId = parseInt(c.req.param("responseId"));
+  const user = c.get("user");
+
+  const [response] = await db
+    .select({
+      form: formsTable,
+      version: formVersionsTable,
+      response: formResponsesTable,
+      app: appsTable,
+    })
+    .from(formResponsesTable)
+    .where(eq(formResponsesTable.id, responseId))
+    .innerJoin(
+      formVersionsTable,
+      eq(formVersionsTable.id, formResponsesTable.formVersionId),
+    )
+    .innerJoin(formsTable, eq(formsTable.id, formVersionsTable.formId))
+    .innerJoin(appsTable, eq(appsTable.id, formsTable.appId))
+    .limit(1);
+
+  if (!response) {
+    c.status(404);
+    return c.json({
+      error: "not-found",
+      message: "Response not found",
+    });
+  }
+
+  if (response.app.userId !== user.id) {
+    c.status(403);
+    return c.json({
+      error: "forbidden",
+      message: "You are not authorized to access this resource",
+    });
+  }
+
+  await db
+    .delete(formResponsesTable)
+    .where(eq(formResponsesTable.id, responseId));
+
+  return c.json({
+    message: "Response deleted succesfully",
+  });
+});
+
 export default app;
