@@ -72,9 +72,9 @@ app.get("/forms/:formId", async (c) => {
   const formId = parseInt(c.req.param("formId"));
   const user = c.get("user");
 
-  const page = parseInt(c.req.query.page as string) || 1;
-  const limit = parseInt(c.req.query.limit as string) || 50;
-  const archived = c.req.query.archived === "true";
+  const page = parseInt(c.req.query("page") as string) || 1;
+  const limit = parseInt(c.req.query("limit") as string) || 50;
+  const archived = c.req.query("archived") == "true";
 
   const [form] = await db
     .select({
