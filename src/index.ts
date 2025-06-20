@@ -15,11 +15,12 @@ import {
   formVersionsTable,
   secretKeysTable,
 } from "./db/schema.js";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import auth from "./routes/auth.js";
 import apps from "./routes/apps.js";
 import forms from "./routes/forms.js";
 import secretKeys from "./routes/secret-keys.js";
+import checkout from "./routes/checkout.js";
 import { hashSecretKey } from "./lib/secret-key.js";
 import z from "zod";
 import { zValidator } from "@hono/zod-validator";
@@ -169,6 +170,13 @@ app.post("forms/:formId", async (c) => {
     response,
   });
 
+  await db
+    .update(formsTable)
+    .set({
+      responseCount: sql`${formsTable.responseCount} + 1`,
+    })
+    .where(eq(formsTable.id, form.id));
+
   const ownerDevices = await db
     .select()
     .from(devicesTable)
@@ -182,7 +190,9 @@ app.post("forms/:formId", async (c) => {
     tokens: fcmTokens,
   };
 
-  await getMessaging(firebaseApp).sendEachForMulticast(message);
+  if (ownerDevices.length > 0) {
+    await getMessaging(firebaseApp).sendEachForMulticast(message);
+  }
 
   return c.json({
     message: "success",
@@ -266,6 +276,7 @@ app.post(
 app.route("/", apps);
 app.route("/", forms);
 app.route("/", secretKeys);
+app.route("/", checkout);
 
 app.post("/sessions/validate", async (c) => {
   const user = c.get("user");

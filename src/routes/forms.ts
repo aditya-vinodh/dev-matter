@@ -10,7 +10,7 @@ import {
   formsTable,
   formVersionsTable,
 } from "../db/schema.js";
-import { eq, inArray, desc } from "drizzle-orm";
+import { eq, inArray, desc, and } from "drizzle-orm";
 
 const app = new Hono<{ Variables: { user: User; session: Session } }>();
 
@@ -72,12 +72,17 @@ app.get("/forms/:formId", async (c) => {
   const formId = parseInt(c.req.param("formId"));
   const user = c.get("user");
 
+  const page = parseInt(c.req.query.page as string) || 1;
+  const limit = parseInt(c.req.query.limit as string) || 50;
+  const archived = c.req.query.archived === "true";
+
   const [form] = await db
     .select({
       id: formsTable.id,
       name: formsTable.name,
       public: formsTable.public,
       appId: formsTable.appId,
+      responseCount: formsTable.responseCount,
       app: {
         id: appsTable.id,
         name: appsTable.name,
@@ -110,12 +115,17 @@ app.get("/forms/:formId", async (c) => {
     .select()
     .from(formResponsesTable)
     .where(
-      inArray(
-        formResponsesTable.formVersionId,
-        formVersions.map((version) => version.id),
+      and(
+        inArray(
+          formResponsesTable.formVersionId,
+          formVersions.map((version) => version.id),
+        ),
+        eq(formResponsesTable.archived, archived),
       ),
     )
-    .orderBy(desc(formResponsesTable.createdAt));
+    .orderBy(desc(formResponsesTable.createdAt))
+    .limit(limit)
+    .offset((page - 1) * limit);
 
   return c.json({ ...form, versions: formVersions, responses: formResponses });
 });
@@ -255,6 +265,63 @@ app.patch(
 
     return c.json({
       message: "Form updated succesfully",
+    });
+  },
+);
+
+app.patch(
+  "/responses/:responseId",
+  zValidator("json", z.object({ archived: z.boolean().optional() })),
+  async (c) => {
+    const responseId = parseInt(c.req.param("responseId"));
+    const { archived } = c.req.valid("json");
+
+    const user = c.get("user");
+
+    const [response] = await db
+      .select({
+        form: formsTable,
+        version: formVersionsTable,
+        response: formResponsesTable,
+        app: appsTable,
+      })
+      .from(formResponsesTable)
+      .where(eq(formResponsesTable.id, responseId))
+      .innerJoin(
+        formVersionsTable,
+        eq(formVersionsTable.id, formResponsesTable.formVersionId),
+      )
+      .innerJoin(formsTable, eq(formsTable.id, formVersionsTable.formId))
+      .innerJoin(appsTable, eq(appsTable.id, formsTable.appId))
+      .limit(1);
+
+    if (!response) {
+      c.status(404);
+      return c.json({
+        error: "not-found",
+        message: "Response not found",
+      });
+    }
+
+    if (response.app.userId !== user.id) {
+      c.status(403);
+      return c.json({
+        error: "forbidden",
+        message: "You are not authorized to access this resource",
+      });
+    }
+
+    if (archived !== undefined) {
+      await db
+        .update(formResponsesTable)
+        .set({
+          archived,
+        })
+        .where(eq(formResponsesTable.id, responseId));
+    }
+
+    return c.json({
+      message: "Response updated succesfully",
     });
   },
 );

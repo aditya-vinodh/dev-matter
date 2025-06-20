@@ -62,6 +62,7 @@ export const formsTable = pgTable("forms", {
     .notNull()
     .references(() => appsTable.id),
   public: boolean().notNull().default(false),
+  responseCount: integer().notNull().default(0),
 });
 
 export const formVersionsTable = pgTable("form_versions", {
@@ -80,6 +81,7 @@ export const formResponsesTable = pgTable("form_responses", {
     .notNull()
     .references(() => formVersionsTable.id),
   respondentId: varchar({ length: 255 }),
+  archived: boolean().notNull().default(false),
   response: jsonb().notNull(),
   createdAt: timestamp().notNull().defaultNow(),
 });
