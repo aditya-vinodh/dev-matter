@@ -49,7 +49,7 @@ export const secretKeysTable = pgTable("secret_keys", {
   id: integer().primaryKey().generatedAlwaysAsIdentity(),
   appId: integer()
     .notNull()
-    .references(() => appsTable.id),
+    .references(() => appsTable.id, { onDelete: "cascade" }),
   name: varchar({ length: 255 }).notNull(),
   hash: varchar({ length: 255 }).notNull(),
   createdAt: timestamp().notNull().defaultNow(),
@@ -60,7 +60,7 @@ export const formsTable = pgTable("forms", {
   name: varchar({ length: 255 }).notNull(),
   appId: integer()
     .notNull()
-    .references(() => appsTable.id),
+    .references(() => appsTable.id, { onDelete: "cascade" }),
   public: boolean().notNull().default(false),
   responseCount: integer().notNull().default(0),
 });
