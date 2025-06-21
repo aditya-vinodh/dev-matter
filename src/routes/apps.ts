@@ -110,4 +110,42 @@ app.get("/apps/:id", async (c) => {
   return c.json({ ...app, forms, secretKeys });
 });
 
+app.put(
+  "/apps/:id",
+  zValidator(
+    "json",
+    z.object({ name: z.string().min(1), url: z.string().url() }),
+  ),
+  async (c) => {
+    const appId = parseInt(c.req.param("id"));
+    const user = c.get("user");
+
+    const [app] = await db
+      .select()
+      .from(appsTable)
+      .where(eq(appsTable.id, appId));
+    if (!app) {
+      c.status(404);
+      return c.json({ error: "not-found", message: "Could not find this app" });
+    }
+
+    if (app.userId !== user.id) {
+      c.status(403);
+      return c.json({
+        error: "forbidden",
+        message: "You are not allowed to delete this app.",
+      });
+    }
+
+    const { name, url } = c.req.valid("json");
+
+    await db
+      .update(appsTable)
+      .set({ name, url })
+      .where(eq(appsTable.id, appId));
+
+    return c.json({ message: "App updated successfully" });
+  },
+);
+
 export default app;
