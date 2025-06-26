@@ -8,6 +8,16 @@ import { VerificationEmail } from "../emails/verification-email.js";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
+export async function getEmailVerificationRequest(
+  id: string,
+): Promise<EmailVerificationRequest | null> {
+  const [emailVerificationRequest] = await db
+    .select()
+    .from(emailVerificationRequestsTable)
+    .where(eq(emailVerificationRequestsTable.id, id));
+  return emailVerificationRequest;
+}
+
 export async function createEmailVerificationRequest(
   userId: number,
   email: string,

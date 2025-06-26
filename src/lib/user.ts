@@ -42,6 +42,19 @@ export async function getUserFromEmail(
   return user;
 }
 
+export async function getUserById(id: number): Promise<User | undefined> {
+  const [user] = await db
+    .select({
+      id: usersTable.id,
+      email: usersTable.email,
+      name: usersTable.name,
+      emailVerified: usersTable.emailVerified,
+    })
+    .from(usersTable)
+    .where(eq(usersTable.id, id));
+  return user;
+}
+
 export async function getUserPasswordHash(id: number): Promise<string | null> {
   const [user] = await db
     .select({
@@ -50,6 +63,17 @@ export async function getUserPasswordHash(id: number): Promise<string | null> {
     .from(usersTable)
     .where(eq(usersTable.id, id));
   return user.passwordHash;
+}
+
+export async function updateUserPassword(
+  id: number,
+  newPassword: string,
+): Promise<void> {
+  const passwordHash = await hashPassword(newPassword);
+  await db
+    .update(usersTable)
+    .set({ passwordHash })
+    .where(eq(usersTable.id, id));
 }
 
 export interface User {
