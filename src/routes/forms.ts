@@ -408,6 +408,13 @@ app.delete("/responses/:responseId", async (c) => {
     .delete(formResponsesTable)
     .where(eq(formResponsesTable.id, responseId));
 
+  await db
+    .update(formsTable)
+    .set({
+      responseCount: response.form.responseCount - 1,
+    })
+    .where(eq(formsTable.id, response.form.id));
+
   return c.json({
     message: "Response deleted succesfully",
   });

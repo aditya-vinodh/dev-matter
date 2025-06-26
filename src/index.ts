@@ -10,10 +10,12 @@ import { db } from "./db/index.js";
 import {
   appsTable,
   devicesTable,
+  emailVerificationRequestsTable,
   formResponsesTable,
   formsTable,
   formVersionsTable,
   secretKeysTable,
+  usersTable,
 } from "./db/schema.js";
 import { and, desc, eq, sql } from "drizzle-orm";
 import auth from "./routes/auth.js";
@@ -26,6 +28,10 @@ import z from "zod";
 import { zValidator } from "@hono/zod-validator";
 import { getMessaging } from "firebase-admin/messaging";
 import { firebaseApp } from "./lib/firebase.js";
+import {
+  createEmailVerificationRequest,
+  sendVerificationEmail,
+} from "./lib/email-verification.js";
 
 const app = new Hono<{ Variables: { user: User; session: Session } }>();
 
@@ -46,7 +52,12 @@ app.post("forms/:formId", async (c) => {
       id: formsTable.id,
       public: formsTable.public,
       name: formsTable.name,
-      app: { id: appsTable.id, userId: appsTable.userId },
+      app: {
+        id: appsTable.id,
+        name: appsTable.name,
+        url: appsTable.url,
+        userId: appsTable.userId,
+      },
     })
     .from(formsTable)
     .where(eq(formsTable.id, formId))
@@ -165,10 +176,13 @@ app.post("forms/:formId", async (c) => {
     });
   }
 
-  await db.insert(formResponsesTable).values({
-    formVersionId: formVersion.id,
-    response,
-  });
+  const [newResponse] = await db
+    .insert(formResponsesTable)
+    .values({
+      formVersionId: formVersion.id,
+      response,
+    })
+    .returning();
 
   await db
     .update(formsTable)
@@ -186,6 +200,15 @@ app.post("forms/:formId", async (c) => {
     notification: {
       title: "New Form Submission",
       body: `A new form submission has been received for ${form.name}.`,
+    },
+    data: {
+      appId: String(form.app.id),
+      appName: form.app.name,
+      appUrl: form.app.url,
+      formId: String(form.id),
+      formName: form.name,
+      formPublic: form.public ? "true" : "false",
+      responseId: String(newResponse.id),
     },
     tokens: fcmTokens,
   };
@@ -277,6 +300,97 @@ app.route("/", apps);
 app.route("/", forms);
 app.route("/", secretKeys);
 app.route("/", checkout);
+
+app.post(
+  "/verify-email",
+  zValidator("json", z.object({ code: z.string() })),
+  async (c) => {
+    const user = c.get("user");
+    const { code } = c.req.valid("json");
+
+    const [emailVerificationRequest] = await db
+      .select()
+      .from(emailVerificationRequestsTable)
+      .where(eq(emailVerificationRequestsTable.userId, user.id))
+      .limit(1);
+    if (!emailVerificationRequest) {
+      c.status(404);
+      return c.json({
+        error: "not-found",
+        message: "Email verification request not found",
+      });
+    }
+
+    if (emailVerificationRequest.code !== code) {
+      c.status(400);
+      return c.json({
+        error: "invalid-code",
+        message: "Invalid verification code",
+      });
+    }
+
+    if (emailVerificationRequest.expiresAt.getTime() < Date.now()) {
+      c.status(400);
+      return c.json({
+        error: "expired-code",
+        message: "Email verification code has expired",
+      });
+    }
+
+    await db
+      .update(usersTable)
+      .set({
+        emailVerified: true,
+      })
+      .where(eq(usersTable.id, user.id));
+
+    await db
+      .delete(emailVerificationRequestsTable)
+      .where(
+        eq(emailVerificationRequestsTable.id, emailVerificationRequest.id),
+      );
+
+    c.status(200);
+    return c.json({
+      message: "Email verified",
+    });
+  },
+);
+
+app.post("/verify-email/resend", async (c) => {
+  const user = c.get("user");
+
+  const [emailVerificationRequest] = await db
+    .select()
+    .from(emailVerificationRequestsTable)
+    .where(eq(emailVerificationRequestsTable.userId, user.id));
+
+  if (!emailVerificationRequest) {
+    c.status(404);
+    return c.json({
+      error: "request-not-found",
+      message:
+        "No email verification request found for this user. Please request a new one.",
+    });
+  }
+
+  await db
+    .delete(emailVerificationRequestsTable)
+    .where(eq(emailVerificationRequestsTable.id, emailVerificationRequest.id));
+
+  const newEmailVerificationRequest = await createEmailVerificationRequest(
+    user.id,
+    emailVerificationRequest.email,
+  );
+  await sendVerificationEmail(
+    emailVerificationRequest.email,
+    newEmailVerificationRequest.code,
+  );
+
+  return c.json({
+    message: "Email verification request resent",
+  });
+});
 
 app.post("/sessions/validate", async (c) => {
   const user = c.get("user");

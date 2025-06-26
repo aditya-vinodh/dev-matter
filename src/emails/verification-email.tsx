@@ -10,8 +10,8 @@ export const VerificationEmail: React.FC<Readonly<VerificationEmailProps>> = ({
   code,
 }) => (
   <div>
-    <h1>
+    <p>
       Please use the code {code} to verify your email {email} on DevMatter
-    </h1>
+    </p>
   </div>
 );
