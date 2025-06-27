@@ -1,5 +1,6 @@
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
+import { cors } from "hono/cors";
 import { type User } from "./lib/user.js";
 import {
   invalidateSession,
@@ -34,6 +35,8 @@ import {
 } from "./lib/email-verification.js";
 
 const app = new Hono<{ Variables: { user: User; session: Session } }>();
+
+app.use("/*", cors());
 
 app.get("/", (c) => {
   return c.text("Hello Hono!");
