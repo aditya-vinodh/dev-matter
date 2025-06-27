@@ -20,7 +20,7 @@ export const sessionsTable = pgTable("sessions", {
   id: varchar({ length: 255 }).primaryKey(),
   userId: integer()
     .notNull()
-    .references(() => usersTable.id),
+    .references(() => usersTable.id, { onDelete: "cascade" }),
   expiresAt: timestamp().notNull(),
 });
 
@@ -30,7 +30,7 @@ export const emailVerificationRequestsTable = pgTable(
     id: varchar({ length: 255 }).primaryKey(),
     userId: integer()
       .notNull()
-      .references(() => usersTable.id),
+      .references(() => usersTable.id, { onDelete: "cascade" }),
     email: varchar({ length: 255 }).notNull(),
     code: varchar({ length: 255 }).notNull(),
     expiresAt: timestamp().notNull(),
@@ -41,7 +41,7 @@ export const appsTable = pgTable("apps", {
   id: integer().primaryKey().generatedAlwaysAsIdentity(),
   userId: integer()
     .notNull()
-    .references(() => usersTable.id),
+    .references(() => usersTable.id, { onDelete: "cascade" }),
   name: varchar({ length: 255 }).notNull(),
   url: varchar({ length: 255 }).notNull(),
 });

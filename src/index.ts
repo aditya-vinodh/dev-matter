@@ -33,8 +33,42 @@ import {
   createEmailVerificationRequest,
   sendVerificationEmail,
 } from "./lib/email-verification.js";
+import { hashPassword } from "./lib/password.js";
 
 const app = new Hono<{ Variables: { user: User; session: Session } }>();
+
+// check if test user exists
+let [testUser] = await db
+  .select()
+  .from(usersTable)
+  .where(eq(usersTable.email, "test@devmatter.app"));
+if (!testUser) {
+  [testUser] = await db
+    .insert(usersTable)
+    .values({
+      email: "test@devmatter.app",
+      name: "Test User",
+      passwordHash: await hashPassword("testpass123*"),
+      pricingPlan: "free",
+      emailVerified: true,
+    })
+    .returning();
+}
+
+let [testApp] = await db
+  .select()
+  .from(appsTable)
+  .where(eq(appsTable.userId, testUser.id));
+if (!testApp) {
+  [testApp] = await db
+    .insert(appsTable)
+    .values({
+      name: "Test App",
+      url: "https://test.devmatter.app",
+      userId: testUser.id,
+    })
+    .returning();
+}
 
 app.use("/*", cors());
 
