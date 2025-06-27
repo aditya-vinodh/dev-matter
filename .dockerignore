@@ -1,6 +1,7 @@
 Dockerfile
 .dockerignore
 .git
+keys
 
 # dev
 .yarn/
