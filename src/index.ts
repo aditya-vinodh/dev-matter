@@ -181,11 +181,20 @@ app.post("forms/:formId", async (c) => {
   }
 
   let response;
-  if (contentType === "application/json") {
-    const body = await c.req.json();
-    response = body;
+  if (
+    contentType === "application/json" ||
+    contentType === "application/x-www-form-urlencoded" ||
+    contentType?.startsWith("multipart/form-data")
+  ) {
+    if (contentType === "application/json") {
+      const body = await c.req.json();
+      response = body;
+    } else {
+      const body = await c.req.parseBody();
+      response = body;
+    }
 
-    for (const [key, _] of Object.entries(body)) {
+    for (const [key, _] of Object.entries(response)) {
       if (!fields.find((field) => field.id === key)) {
         c.status(400);
         return c.json({
@@ -195,7 +204,7 @@ app.post("forms/:formId", async (c) => {
       }
     }
     for (const field of fields.filter((field) => field.required === true)) {
-      const reqEntries = Object.entries(body);
+      const reqEntries = Object.entries(response);
       const foundEntry = reqEntries.find((entry) => entry[0] === field.id);
       if (!foundEntry || typeof foundEntry[1] !== field.type) {
         c.status(400);
@@ -207,17 +216,20 @@ app.post("forms/:formId", async (c) => {
     }
   } else {
     c.status(400);
+    console.log(contentType);
     return c.json({
       error: "unsupported-content-type",
-      message: "We currently support only application/json.",
+      message:
+        "We currently support only application/json, multipart/form-data, and application/x-www-form-urlencoded",
     });
   }
 
+  console.log(response);
   const [newResponse] = await db
     .insert(formResponsesTable)
     .values({
       formVersionId: formVersion.id,
-      response,
+      response: { ...response },
     })
     .returning();
 
