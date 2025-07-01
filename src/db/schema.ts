@@ -64,6 +64,9 @@ export const formsTable = pgTable("forms", {
     .references(() => appsTable.id, { onDelete: "cascade" }),
   public: boolean().notNull().default(false),
   responseCount: integer().notNull().default(0),
+  redirectOnSubmit: boolean().notNull().default(false),
+  successUrl: varchar({ length: 255 }).notNull().default(""),
+  failureUrl: varchar({ length: 255 }).notNull().default(""),
 });
 
 export const formVersionsTable = pgTable("form_versions", {

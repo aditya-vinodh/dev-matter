@@ -89,6 +89,9 @@ app.post("forms/:formId", async (c) => {
       id: formsTable.id,
       public: formsTable.public,
       name: formsTable.name,
+      redirectOnSubmit: formsTable.redirectOnSubmit,
+      successUrl: formsTable.successUrl,
+      failureUrl: formsTable.failureUrl,
       app: {
         id: appsTable.id,
         name: appsTable.name,
@@ -111,22 +114,30 @@ app.post("forms/:formId", async (c) => {
   if (!form.public) {
     const authHeader = c.req.header("Authorization");
     if (!authHeader) {
-      c.status(401);
-      return c.json({
-        error: "unauthorized",
-        message:
-          "This is a private form. You need to pass the secret key in the Authorization header using Bearer scheme",
-      });
+      if (form.redirectOnSubmit) {
+        return c.redirect(form.failureUrl, 303);
+      } else {
+        c.status(401);
+        return c.json({
+          error: "unauthorized",
+          message:
+            "This is a private form. You need to pass the secret key in the Authorization header using Bearer scheme",
+        });
+      }
     }
 
     const authHeaderParts = authHeader.split(" ");
     if (authHeaderParts.length !== 2) {
-      c.status(401);
-      return c.json({
-        error: "unauthorized",
-        message:
-          "Authorization header must contain secret key with Bearer scheme",
-      });
+      if (form.redirectOnSubmit) {
+        return c.redirect(form.failureUrl, 303);
+      } else {
+        c.status(401);
+        return c.json({
+          error: "unauthorized",
+          message:
+            "Authorization header must contain secret key with Bearer scheme",
+        });
+      }
     }
 
     const key = authHeaderParts[1];
@@ -136,19 +147,27 @@ app.post("forms/:formId", async (c) => {
       .from(secretKeysTable)
       .where(eq(secretKeysTable.hash, hashedKey));
     if (!secretKey) {
-      c.status(403);
-      return c.json({
-        error: "forbidden",
-        message: "Invalid secret key",
-      });
+      if (form.redirectOnSubmit) {
+        return c.redirect(form.failureUrl, 303);
+      } else {
+        c.status(403);
+        return c.json({
+          error: "forbidden",
+          message: "Invalid secret key",
+        });
+      }
     }
 
     if (secretKey.appId !== form.app.id) {
-      c.status(403);
-      return c.json({
-        error: "forbidden",
-        message: "Invalid secret key",
-      });
+      if (form.redirectOnSubmit) {
+        return c.redirect(form.failureUrl, 303);
+      } else {
+        c.status(403);
+        return c.json({
+          error: "forbidden",
+          message: "Invalid secret key",
+        });
+      }
     }
   }
 
@@ -172,12 +191,16 @@ app.post("forms/:formId", async (c) => {
   try {
     fields = fieldsSchema.parse(formVersion.fields);
   } catch {
-    c.status(500);
-    return c.json({
-      error: "internal-server-error",
-      message:
-        "Schema data is corrupted. We could not process this form. Please contact support.",
-    });
+    if (form.redirectOnSubmit) {
+      return c.redirect(form.failureUrl, 303);
+    } else {
+      c.status(500);
+      return c.json({
+        error: "internal-server-error",
+        message:
+          "Schema data is corrupted. We could not process this form. Please contact support.",
+      });
+    }
   }
 
   let response;
@@ -196,35 +219,45 @@ app.post("forms/:formId", async (c) => {
 
     for (const [key, _] of Object.entries(response)) {
       if (!fields.find((field) => field.id === key)) {
-        c.status(400);
-        return c.json({
-          error: "invalid-submission",
-          message: "Does not match schema",
-        });
+        if (form.redirectOnSubmit) {
+          return c.redirect(form.failureUrl, 303);
+        } else {
+          c.status(400);
+          return c.json({
+            error: "invalid-submission",
+            message: "Does not match schema",
+          });
+        }
       }
     }
     for (const field of fields.filter((field) => field.required === true)) {
       const reqEntries = Object.entries(response);
       const foundEntry = reqEntries.find((entry) => entry[0] === field.id);
       if (!foundEntry || typeof foundEntry[1] !== field.type) {
-        c.status(400);
-        return c.json({
-          error: "invalid-submission",
-          message: "Does not match schema",
-        });
+        if (form.redirectOnSubmit) {
+          return c.redirect(form.failureUrl, 303);
+        } else {
+          c.status(400);
+          return c.json({
+            error: "invalid-submission",
+            message: "Does not match schema",
+          });
+        }
       }
     }
   } else {
     c.status(400);
-    console.log(contentType);
-    return c.json({
-      error: "unsupported-content-type",
-      message:
-        "We currently support only application/json, multipart/form-data, and application/x-www-form-urlencoded",
-    });
+    if (form.redirectOnSubmit) {
+      return c.redirect(form.failureUrl, 303);
+    } else {
+      return c.json({
+        error: "unsupported-content-type",
+        message:
+          "We currently support only application/json, multipart/form-data, and application/x-www-form-urlencoded",
+      });
+    }
   }
 
-  console.log(response);
   const [newResponse] = await db
     .insert(formResponsesTable)
     .values({
@@ -266,9 +299,16 @@ app.post("forms/:formId", async (c) => {
     await getMessaging(firebaseApp).sendEachForMulticast(message);
   }
 
-  return c.json({
-    message: "success",
-  });
+  if (!form.redirectOnSubmit) {
+    return c.json({
+      responseId: newResponse.id,
+    });
+  } else {
+    return c.redirect(
+      form.successUrl || "https://devmatter.app/forms/success",
+      303,
+    );
+  }
 });
 
 // Auth middleware
