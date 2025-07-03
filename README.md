@@ -1,23 +1,148 @@
 # DevMatter
 
-A better way to manage your apps!
+[![Docker Pulls](https://img.shields.io/docker/pulls/adityavinodh/dev-matter)](https://hub.docker.com/r/adityavinodh/dev-matter)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-I've been working on this project as an easy way to manage my own apps. I have a lot of ideas for things I want to build, so naturally I am working on multiple projects simultaneously. There are a lot of trivial yet annoying things I need to do every time I build software to manage and monitor it. So, I decided to build __DevMatter__, a lightweight app that you can easily self-host to manage repeated and trivial tasks you might encounter.
+A lightweight, self-hostable platform for managing your applications and automating repetitive development tasks.
 
-The most important thing I wanted was a way for me to send form data somewhere so that I can easily view it later and be notified when submissions occur. I couldn't find an existing solution that gave the flexbility of customizing and integrating the form with my apps that way I liked, and none had convenient options to view them on the go. Thus, that is the first feature I built!
+## Overview
 
-# Features
+DevMatter is designed to streamline common development workflows by providing a centralized platform for managing multiple projects. Whether you're juggling several applications or need a simple way to handle form submissions and notifications, DevMatter offers the flexibility and control you need.
 
-1. Forms
+## Features
 
-An extremely simple API that allows you to create forms with a schema that you define, and save submissions programatically. You get to control the entire form experience, and deal with the data later however you like.
+### 📋 Forms
+- **Custom Schema Definition**: Create forms with your own schema structure
+- **Programmatic Submissions**: Simple API for saving form data
+- **Real-time Notifications**: Get notified instantly when submissions occur
+- **Mobile-First Experience**: Clean mobile interface for viewing submissions on the go (iOS support, Android coming soon)
 
-Get notified on the go using a clean mobile app experience. (Starting with iOS only. Will expand to Android if there is sufficient interest)
+### 🚀 More Features Coming Soon
+- Project monitoring and analytics
+- Automated deployment workflows
+- Custom webhook integrations
 
-2. _More features coming soon..._
+## Quick Start
 
-# Get started
+### Cloud Hosting
+Get started immediately with our hosted version at [devmatter.app](https://devmatter.app)
 
-Head over to [Dev Matter](https://devmatter.app) to start building using our cloud-hosted version.
+### Self-Hosting with Docker
+```bash
+docker run -d \
+  --name dev-matter \
+  -p 3000:3000 \
+  -e DATABASE_URL="your_database_url" \
+  -e SECRET="your_secret_key" \
+  -e RESEND_API_KEY="your_resend_api_key" \
+  -e GOOGLE_APPLICATION_CREDENTIALS="path/to/credentials.json" \
+  adityavinodh/dev-matter
+```
 
-Or, self-host it using Docker `adityavinodh/dev-matter`
+Note: This is only the API server. The web app has its own repository: [devmatter-web](https://github.com/aditya-vinodh/dev-matter-web)
+
+## Local Development Setup
+
+### Prerequisites
+- Node.js 20+ and npm
+- PostgreSQL database
+- Firebase project for push notifications
+- Resend API key for transactional email
+
+### Installation
+
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/your-username/dev-matter.git
+   cd dev-matter
+   ```
+
+2. **Install dependencies**
+   ```bash
+   npm install
+   ```
+
+3. **Set up environment variables**
+   ```bash
+   cp .env.example .env
+   ```
+
+4. **Configure your environment**
+
+   Edit `.env` with your configuration:
+
+   ```bash
+   # Required
+   DATABASE_URL=postgresql://username:password@localhost:5432/devmatter
+   SECRET=your-super-secret-key-here
+   RESEND_API_KEY=your-resend-api-key
+   GOOGLE_APPLICATION_CREDENTIALS=/path/to/firebase-admin-sdk.json
+   ```
+
+5. **Set up the database**
+   ```bash
+   npm run db:push
+   ```
+
+6. **Start the development server**
+   ```bash
+   npm run dev
+   ```
+
+The application will be available at `http://localhost:3000`
+
+## Environment Variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `DATABASE_URL` | ✅ | PostgreSQL connection string |
+| `SECRET` | ✅ | Secret key for JWT tokens and encryption |
+| `RESEND_API_KEY` | ✅ | API key for email notifications via Resend |
+| `GOOGLE_APPLICATION_CREDENTIALS` | ✅ | Path to Firebase Admin SDK JSON file for push notifications |
+
+### Firebase Setup
+For push notifications, you'll need to:
+1. Create a Firebase project
+2. Generate a service account key
+3. Download the JSON credentials file
+4. Set `GOOGLE_APPLICATION_CREDENTIALS` to the file path
+
+## Database Management
+
+```bash
+# Generate migrations
+npm run db:generate
+
+# Push schema changes to database
+npm run db:push
+
+# Run migrations
+npm run db:migrate
+
+# Open Drizzle Studio (database GUI)
+npm run db:studio
+```
+
+## Contributing
+
+We welcome contributions!
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Support
+
+- 📧 [Contact form](https://devmatter.app/contact)
+- 🐛 Issues: [GitHub Issues](https://github.com/aditya-vinodh/dev-matter/issues)
+- 💬 Discussions: [GitHub Discussions](https://github.com/your-username/dev-matter/discussions)
+
+---
+
+Built with ❤️ for developers who want to focus on building, not managing.
