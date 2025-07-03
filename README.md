@@ -18,9 +18,10 @@ DevMatter is designed to streamline common development workflows by providing a 
 - **Mobile-First Experience**: Clean mobile interface for viewing submissions on the go (iOS support, Android coming soon)
 
 ### 🚀 More Features Coming Soon
+- Team based collaboration
 - Project monitoring and analytics
-- Automated deployment workflows
-- Custom webhook integrations
+- Third party integrations
+- API based customer support system
 
 ## Quick Start
 
