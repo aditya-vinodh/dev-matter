@@ -6,7 +6,9 @@ import { verifyPasswordHash, verifyPasswordStrength } from "../lib/password.js";
 import { z } from "zod";
 import { checkEmailAvailability } from "../lib/email.js";
 import {
+  addUserGoogleId,
   createUser,
+  getUserByGoogleId,
   getUserById,
   getUserFromEmail,
   getUserPasswordHash,
@@ -24,6 +26,13 @@ import {
   generateSessionToken,
   type Session,
 } from "../lib/session.js";
+import {
+  decodeIdToken,
+  generateCodeVerifier,
+  generateState,
+  OAuth2Tokens,
+} from "arctic";
+import { google } from "../lib/oauth.js";
 
 const app = new Hono<{ Variables: { user: User; session: Session } }>();
 
@@ -126,6 +135,101 @@ app.post(
   },
 );
 
+app.get("/login/google", async (c) => {
+  const state = generateState();
+  const codeVerifier = generateCodeVerifier();
+  const url =
+    google.createAuthorizationURL(state, codeVerifier, [
+      "openid",
+      "profile",
+      "email",
+    ]) + "&prompt=select_account";
+
+  return c.json({
+    url,
+    state,
+    codeVerifier,
+  });
+});
+
+app.post(
+  "/login/google",
+  zValidator("json", z.object({ code: z.string(), codeVerifier: z.string() })),
+  async (c) => {
+    const { code, codeVerifier } = c.req.valid("json");
+
+    let tokens: OAuth2Tokens;
+    try {
+      tokens = await google.validateAuthorizationCode(code, codeVerifier);
+    } catch (e) {
+      c.status(400);
+      return c.json({
+        error: "invalid-credentials",
+        message: "Code is invalid",
+      });
+    }
+
+    const claims = decodeIdToken(tokens.idToken());
+    const googleUserId = claims.sub;
+    const username = claims.name;
+    const email = claims.email;
+    const emailVerified = claims.email_verified;
+
+    console.log(claims);
+    const user = await getUserByGoogleId(googleUserId);
+
+    if (!user) {
+      // TODO
+      const user = await getUserFromEmail(email);
+      if (!user) {
+        // TODO
+        const user = await createUser(
+          email,
+          null,
+          username,
+          googleUserId,
+          emailVerified,
+        );
+        if (!emailVerified) {
+          const emailVerificationRequest = await createEmailVerificationRequest(
+            user.id,
+            email,
+          );
+          await sendVerificationEmail(email, emailVerificationRequest.code);
+        }
+
+        const sessionToken = generateSessionToken();
+        const session = await createSession(sessionToken, user.id);
+
+        return c.json({
+          user,
+          sessionToken,
+          expiresAt: session.expiresAt,
+        });
+      }
+
+      await addUserGoogleId(user.id, googleUserId);
+
+      const sessionToken = generateSessionToken();
+      const session = await createSession(sessionToken, user.id);
+      return c.json({
+        user,
+        sessionToken,
+        expiresAt: session.expiresAt,
+      });
+    }
+
+    const sessionToken = generateSessionToken();
+    const session = await createSession(sessionToken, user.id);
+    return c.json({
+      user,
+      sessionToken,
+      expiresAt: session.expiresAt,
+    });
+  },
+);
+
+// Forgot password
 app.post(
   "/forgot-password",
   zValidator("json", z.object({ email: z.string().email() })),
@@ -153,6 +257,7 @@ app.post(
   },
 );
 
+// Resend forgot password verification email
 app.post("/forgot-password/resend/:id", async (c) => {
   const id = c.req.param("id");
 
@@ -181,6 +286,7 @@ app.post("/forgot-password/resend/:id", async (c) => {
   });
 });
 
+// Verify forgot password email verification code
 app.post(
   "/forgot-password/verify/:id",
   zValidator("json", z.object({ code: z.string() })),
@@ -230,6 +336,7 @@ app.post(
   },
 );
 
+// Reset password
 app.post(
   "/reset-password",
   zValidator(

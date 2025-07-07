@@ -11,6 +11,7 @@ import {
   formVersionsTable,
 } from "../db/schema.js";
 import { eq, inArray, desc, and } from "drizzle-orm";
+import { success } from "zod/v4";
 
 const app = new Hono<{ Variables: { user: User; session: Session } }>();
 
@@ -83,6 +84,9 @@ app.get("/forms/:formId", async (c) => {
       public: formsTable.public,
       appId: formsTable.appId,
       responseCount: formsTable.responseCount,
+      redirectOnSubmit: formsTable.redirectOnSubmit,
+      successUrl: formsTable.successUrl,
+      failureUrl: formsTable.failureUrl,
       app: {
         id: appsTable.id,
         name: appsTable.name,
@@ -137,6 +141,9 @@ app.patch(
     z.object({
       name: z.string().min(1).optional(),
       public: z.boolean().optional(),
+      redirectOnSubmit: z.boolean().optional(),
+      successUrl: z.string().optional(),
+      failureUrl: z.string().optional(),
       fields: z
         .array(
           z.object({
@@ -183,7 +190,8 @@ app.patch(
       });
     }
 
-    const { name, fields } = c.req.valid("json");
+    const { name, fields, redirectOnSubmit, successUrl, failureUrl } =
+      c.req.valid("json");
     const isPublic = c.req.valid("json").public;
 
     if (fields) {
@@ -253,12 +261,22 @@ app.patch(
       }
     }
 
-    if (name !== undefined || isPublic !== undefined) {
+    if (
+      name !== undefined ||
+      isPublic !== undefined ||
+      failureUrl !== undefined ||
+      successUrl !== undefined ||
+      redirectOnSubmit !== undefined ||
+      failureUrl !== undefined
+    ) {
       await db
         .update(formsTable)
         .set({
           name,
           public: isPublic,
+          redirectOnSubmit,
+          successUrl,
+          failureUrl,
         })
         .where(eq(formsTable.id, formId));
     }

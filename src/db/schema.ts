@@ -11,6 +11,7 @@ export const usersTable = pgTable("users", {
   id: integer().primaryKey().generatedAlwaysAsIdentity(),
   name: varchar({ length: 255 }).notNull(),
   email: varchar({ length: 255 }).notNull().unique(),
+  googleId: varchar({ length: 255 }),
   pricingPlan: varchar({ length: 255 }).notNull().default("free"),
   passwordHash: varchar({ length: 255 }),
   emailVerified: boolean().notNull().default(false),
