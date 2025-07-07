@@ -77,6 +77,36 @@ export async function getUserByGoogleId(
   return user;
 }
 
+export async function getUserByGithubId(
+  githubId: string,
+): Promise<User | undefined> {
+  const [user] = await db
+    .select({
+      id: usersTable.id,
+      email: usersTable.email,
+      name: usersTable.name,
+      emailVerified: usersTable.emailVerified,
+    })
+    .from(usersTable)
+    .where(eq(usersTable.githubId, githubId));
+  return user;
+}
+
+export async function getUserByGithubUsername(
+  githubUsername: string,
+): Promise<User | undefined> {
+  const [user] = await db
+    .select({
+      id: usersTable.id,
+      email: usersTable.email,
+      name: usersTable.name,
+      emailVerified: usersTable.emailVerified,
+    })
+    .from(usersTable)
+    .where(eq(usersTable.githubUsername, githubUsername));
+  return user;
+}
+
 export async function getUserPasswordHash(id: number): Promise<string | null> {
   const [user] = await db
     .select({
@@ -105,10 +135,18 @@ export async function addUserGoogleId(
   await db.update(usersTable).set({ googleId }).where(eq(usersTable.id, id));
 }
 
+export async function addUserGithubId(
+  id: number,
+  githubId: string,
+): Promise<void> {
+  await db.update(usersTable).set({ githubId }).where(eq(usersTable.id, id));
+}
+
 export interface User {
   id: number;
   email: string;
   name: string;
   emailVerified: boolean;
   googleId?: string | null;
+  githubId?: string | null;
 }

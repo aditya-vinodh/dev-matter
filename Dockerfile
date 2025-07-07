@@ -10,6 +10,8 @@ RUN npm install
 # Copy source code
 COPY . .
 
+ENV NODE_ENV=production
+
 # Build the SvelteKit app
 RUN npm run build
 

@@ -12,6 +12,7 @@ export const usersTable = pgTable("users", {
   name: varchar({ length: 255 }).notNull(),
   email: varchar({ length: 255 }).notNull().unique(),
   googleId: varchar({ length: 255 }),
+  githubId: varchar({ length: 255 }),
   pricingPlan: varchar({ length: 255 }).notNull().default("free"),
   passwordHash: varchar({ length: 255 }),
   emailVerified: boolean().notNull().default(false),

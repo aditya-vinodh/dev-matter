@@ -6,8 +6,10 @@ import { verifyPasswordHash, verifyPasswordStrength } from "../lib/password.js";
 import { z } from "zod";
 import { checkEmailAvailability } from "../lib/email.js";
 import {
+  addUserGithubId,
   addUserGoogleId,
   createUser,
+  getUserByGithubId,
   getUserByGoogleId,
   getUserById,
   getUserFromEmail,
@@ -32,7 +34,7 @@ import {
   generateState,
   OAuth2Tokens,
 } from "arctic";
-import { google } from "../lib/oauth.js";
+import { github, google } from "../lib/oauth.js";
 
 const app = new Hono<{ Variables: { user: User; session: Session } }>();
 
@@ -152,6 +154,16 @@ app.get("/login/google", async (c) => {
   });
 });
 
+app.get("/login/github", async (c) => {
+  const state = generateState();
+  const url = github.createAuthorizationURL(state, ["user:email"]);
+
+  return c.json({
+    url,
+    state,
+  });
+});
+
 app.post(
   "/login/google",
   zValidator("json", z.object({ code: z.string(), codeVerifier: z.string() })),
@@ -169,7 +181,12 @@ app.post(
       });
     }
 
-    const claims = decodeIdToken(tokens.idToken());
+    const claims = decodeIdToken(tokens.idToken()) as {
+      sub: string;
+      name: string;
+      email: string;
+      email_verified: boolean;
+    };
     const googleUserId = claims.sub;
     const username = claims.name;
     const email = claims.email;
@@ -209,6 +226,127 @@ app.post(
       }
 
       await addUserGoogleId(user.id, googleUserId);
+
+      const sessionToken = generateSessionToken();
+      const session = await createSession(sessionToken, user.id);
+      return c.json({
+        user,
+        sessionToken,
+        expiresAt: session.expiresAt,
+      });
+    }
+
+    const sessionToken = generateSessionToken();
+    const session = await createSession(sessionToken, user.id);
+    return c.json({
+      user,
+      sessionToken,
+      expiresAt: session.expiresAt,
+    });
+  },
+);
+
+app.post(
+  "/login/github",
+  zValidator("json", z.object({ code: z.string() })),
+  async (c) => {
+    const { code } = c.req.valid("json");
+
+    let tokens: OAuth2Tokens;
+    try {
+      tokens = await github.validateAuthorizationCode(code);
+    } catch (e) {
+      c.status(400);
+      return c.json({
+        error: "invalid-credentials",
+        message: "Code is invalid",
+      });
+    }
+
+    const githubUserResponse = await fetch("https://api.github.com/user", {
+      headers: {
+        Authorization: `Bearer ${tokens.accessToken()}`,
+      },
+    });
+
+    const githubEmailsResponse = await fetch(
+      "https://api.github.com/user/emails",
+      {
+        headers: {
+          Authorization: `Bearer ${tokens.accessToken()}`,
+        },
+      },
+    );
+
+    const githubUser = await githubUserResponse.json();
+    const githubUserId = githubUser.id;
+    const githubUsername = githubUser.login;
+
+    const githubEmails = (await githubEmailsResponse.json()) as Array<{
+      email: string;
+      primary: boolean;
+      verified: boolean;
+    }>;
+    const githubEmail = githubEmails.find((email) => email.primary);
+
+    if (!githubEmail) {
+      c.status(400);
+      return c.json({
+        error: "invalid-credentials",
+        message: "Email not found",
+      });
+    }
+
+    const email = githubEmail.email;
+    const emailVerified = githubEmail.verified;
+
+    console.log(githubUser);
+    console.log(githubEmails);
+
+    // const claims = decodeIdToken(tokens.idToken()) as {
+    //   sub: string;
+    //   name: string;
+    //   email: string;
+    //   email_verified: boolean;
+    // };
+    // const googleUserId = claims.sub;
+    // const username = claims.name;
+    // const email = claims.email;
+    // const emailVerified = claims.email_verified;
+
+    const user = await getUserByGithubId(githubUserId);
+
+    if (!user) {
+      // TODO
+      const user = await getUserFromEmail(email);
+      if (!user) {
+        // TODO
+        const user = await createUser(
+          email,
+          null,
+          githubUsername,
+          githubUserId,
+          emailVerified,
+        );
+        if (!emailVerified) {
+          const emailVerificationRequest = await createEmailVerificationRequest(
+            user.id,
+            email,
+          );
+          await sendVerificationEmail(email, emailVerificationRequest.code);
+        }
+
+        const sessionToken = generateSessionToken();
+        const session = await createSession(sessionToken, user.id);
+
+        return c.json({
+          user,
+          sessionToken,
+          expiresAt: session.expiresAt,
+        });
+      }
+
+      await addUserGithubId(user.id, githubUserId);
 
       const sessionToken = generateSessionToken();
       const session = await createSession(sessionToken, user.id);
