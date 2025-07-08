@@ -92,21 +92,6 @@ export async function getUserByGithubId(
   return user;
 }
 
-export async function getUserByGithubUsername(
-  githubUsername: string,
-): Promise<User | undefined> {
-  const [user] = await db
-    .select({
-      id: usersTable.id,
-      email: usersTable.email,
-      name: usersTable.name,
-      emailVerified: usersTable.emailVerified,
-    })
-    .from(usersTable)
-    .where(eq(usersTable.githubUsername, githubUsername));
-  return user;
-}
-
 export async function getUserPasswordHash(id: number): Promise<string | null> {
   const [user] = await db
     .select({

@@ -111,11 +111,16 @@ app.post("forms/:formId", async (c) => {
     });
   }
 
+  const defaultFailureUrl = "https://devmatter.app/forms/failure";
+
   if (!form.public) {
     const authHeader = c.req.header("Authorization");
     if (!authHeader) {
       if (form.redirectOnSubmit) {
-        return c.redirect(form.failureUrl, 303);
+        return c.redirect(
+          `${form.failureUrl || defaultFailureUrl}?error=unauthorized`,
+          303,
+        );
       } else {
         c.status(401);
         return c.json({
@@ -129,7 +134,10 @@ app.post("forms/:formId", async (c) => {
     const authHeaderParts = authHeader.split(" ");
     if (authHeaderParts.length !== 2) {
       if (form.redirectOnSubmit) {
-        return c.redirect(form.failureUrl, 303);
+        return c.redirect(
+          `${form.failureUrl || defaultFailureUrl}?error=invalid_header`,
+          303,
+        );
       } else {
         c.status(401);
         return c.json({
@@ -148,7 +156,10 @@ app.post("forms/:formId", async (c) => {
       .where(eq(secretKeysTable.hash, hashedKey));
     if (!secretKey) {
       if (form.redirectOnSubmit) {
-        return c.redirect(form.failureUrl, 303);
+        return c.redirect(
+          `${form.failureUrl || defaultFailureUrl}?error=invalid_key`,
+          303,
+        );
       } else {
         c.status(403);
         return c.json({
@@ -160,7 +171,10 @@ app.post("forms/:formId", async (c) => {
 
     if (secretKey.appId !== form.app.id) {
       if (form.redirectOnSubmit) {
-        return c.redirect(form.failureUrl, 303);
+        return c.redirect(
+          `${form.failureUrl || defaultFailureUrl}?error=invalid_app`,
+          303,
+        );
       } else {
         c.status(403);
         return c.json({
@@ -192,7 +206,10 @@ app.post("forms/:formId", async (c) => {
     fields = fieldsSchema.parse(formVersion.fields);
   } catch {
     if (form.redirectOnSubmit) {
-      return c.redirect(form.failureUrl, 303);
+      return c.redirect(
+        `${form.failureUrl || defaultFailureUrl}?error=invalid_schema`,
+        303,
+      );
     } else {
       c.status(500);
       return c.json({
@@ -220,7 +237,10 @@ app.post("forms/:formId", async (c) => {
     for (const [key, _] of Object.entries(response)) {
       if (!fields.find((field) => field.id === key)) {
         if (form.redirectOnSubmit) {
-          return c.redirect(form.failureUrl, 303);
+          return c.redirect(
+            `${form.failureUrl || defaultFailureUrl}?error=invalid_field`,
+            303,
+          );
         } else {
           c.status(400);
           return c.json({
@@ -235,7 +255,10 @@ app.post("forms/:formId", async (c) => {
       const foundEntry = reqEntries.find((entry) => entry[0] === field.id);
       if (!foundEntry || typeof foundEntry[1] !== field.type) {
         if (form.redirectOnSubmit) {
-          return c.redirect(form.failureUrl, 303);
+          return c.redirect(
+            `${form.failureUrl || defaultFailureUrl}?error=invalid_type`,
+            303,
+          );
         } else {
           c.status(400);
           return c.json({
@@ -248,7 +271,10 @@ app.post("forms/:formId", async (c) => {
   } else {
     c.status(400);
     if (form.redirectOnSubmit) {
-      return c.redirect(form.failureUrl, 303);
+      return c.redirect(
+        `${form.failureUrl || defaultFailureUrl}?error=unsupported_content_type`,
+        303,
+      );
     } else {
       return c.json({
         error: "unsupported-content-type",
@@ -304,10 +330,19 @@ app.post("forms/:formId", async (c) => {
       responseId: newResponse.id,
     });
   } else {
-    return c.redirect(
-      form.successUrl || "https://devmatter.app/forms/success",
-      303,
-    );
+    let redirectUrl = form.successUrl || "https://devmatter.app/forms/success";
+    
+    // Replace @placeholders with actual values from the response
+    if (form.successUrl && response) {
+      for (const [key, value] of Object.entries(response)) {
+        const placeholder = `@${key}`;
+        if (redirectUrl.includes(placeholder)) {
+          redirectUrl = redirectUrl.replace(new RegExp(placeholder, 'g'), encodeURIComponent(String(value)));
+        }
+      }
+    }
+    
+    return c.redirect(redirectUrl, 303);
   }
 });
 
