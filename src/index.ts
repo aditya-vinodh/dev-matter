@@ -267,6 +267,10 @@ app.post("forms/:formId", async (c) => {
           });
         }
       }
+
+      if (typeof foundEntry === "string" && foundEntry === "") {
+        delete response[field.id];
+      }
     }
   } else {
     c.status(400);
@@ -331,17 +335,20 @@ app.post("forms/:formId", async (c) => {
     });
   } else {
     let redirectUrl = form.successUrl || "https://devmatter.app/forms/success";
-    
+
     // Replace @placeholders with actual values from the response
     if (form.successUrl && response) {
       for (const [key, value] of Object.entries(response)) {
         const placeholder = `@${key}`;
         if (redirectUrl.includes(placeholder)) {
-          redirectUrl = redirectUrl.replace(new RegExp(placeholder, 'g'), encodeURIComponent(String(value)));
+          redirectUrl = redirectUrl.replace(
+            new RegExp(placeholder, "g"),
+            encodeURIComponent(String(value)),
+          );
         }
       }
     }
-    
+
     return c.redirect(redirectUrl, 303);
   }
 });
