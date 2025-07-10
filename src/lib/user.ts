@@ -31,6 +31,7 @@ export async function createUser(
     name,
     emailVerified,
     googleId: newUser.googleId,
+    pricingPlan: "free",
   };
 }
 
@@ -43,6 +44,7 @@ export async function getUserFromEmail(
       email: usersTable.email,
       name: usersTable.name,
       emailVerified: usersTable.emailVerified,
+      pricingPlan: usersTable.pricingPlan,
     })
     .from(usersTable)
     .where(eq(usersTable.email, email));
@@ -56,6 +58,7 @@ export async function getUserById(id: number): Promise<User | undefined> {
       email: usersTable.email,
       name: usersTable.name,
       emailVerified: usersTable.emailVerified,
+      pricingPlan: usersTable.pricingPlan,
     })
     .from(usersTable)
     .where(eq(usersTable.id, id));
@@ -71,6 +74,7 @@ export async function getUserByGoogleId(
       email: usersTable.email,
       name: usersTable.name,
       emailVerified: usersTable.emailVerified,
+      pricingPlan: usersTable.pricingPlan,
     })
     .from(usersTable)
     .where(eq(usersTable.googleId, googleId));
@@ -86,6 +90,7 @@ export async function getUserByGithubId(
       email: usersTable.email,
       name: usersTable.name,
       emailVerified: usersTable.emailVerified,
+      pricingPlan: usersTable.pricingPlan,
     })
     .from(usersTable)
     .where(eq(usersTable.githubId, githubId));
@@ -132,6 +137,7 @@ export interface User {
   email: string;
   name: string;
   emailVerified: boolean;
+  pricingPlan: string;
   googleId?: string | null;
   githubId?: string | null;
 }

@@ -43,6 +43,7 @@ export async function validateSessionToken(
       email: usersTable.email,
       name: usersTable.name,
       emailVerified: usersTable.emailVerified,
+      pricingPlan: usersTable.pricingPlan,
     })
     .from(sessionsTable)
     .where(eq(sessionsTable.id, sessionId))
@@ -63,6 +64,7 @@ export async function validateSessionToken(
     email: fetchedSession.email,
     name: fetchedSession.name,
     emailVerified: fetchedSession.emailVerified,
+    pricingPlan: fetchedSession.pricingPlan,
   };
 
   if (Date.now() >= session.expiresAt.getTime()) {
