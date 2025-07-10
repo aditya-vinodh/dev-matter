@@ -18,6 +18,24 @@ export const usersTable = pgTable("users", {
   emailVerified: boolean().notNull().default(false),
 });
 
+export const subscriptionCyclesTable = pgTable("subscription_cycles", {
+  id: integer().primaryKey().generatedAlwaysAsIdentity(),
+  userId: integer()
+    .notNull()
+    .references(() => usersTable.id, { onDelete: "cascade" }),
+  startDate: timestamp().notNull(),
+  endDate: timestamp().notNull(),
+});
+
+export const monthsTable = pgTable("months", {
+  id: integer().primaryKey().generatedAlwaysAsIdentity(),
+  subscriptionCycleId: integer()
+    .notNull()
+    .references(() => subscriptionCyclesTable.id, { onDelete: "cascade" }),
+  startDate: timestamp().notNull(),
+  endDate: timestamp().notNull(),
+});
+
 export const sessionsTable = pgTable("sessions", {
   id: varchar({ length: 255 }).primaryKey(),
   userId: integer()
@@ -90,6 +108,17 @@ export const formResponsesTable = pgTable("form_responses", {
   archived: boolean().notNull().default(false),
   response: jsonb().notNull(),
   createdAt: timestamp().notNull().defaultNow(),
+});
+
+export const formResponsesUsageTable = pgTable("form_responses_usage", {
+  id: integer().primaryKey().generatedAlwaysAsIdentity(),
+  userId: integer()
+    .notNull()
+    .references(() => usersTable.id),
+  monthId: integer()
+    .notNull()
+    .references(() => monthsTable.id, { onDelete: "cascade" }),
+  usageCount: integer().notNull().default(0),
 });
 
 export const respondentsTable = pgTable("respondents", {

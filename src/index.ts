@@ -13,17 +13,22 @@ import {
   devicesTable,
   emailVerificationRequestsTable,
   formResponsesTable,
+  formResponsesUsageTable,
   formsTable,
   formVersionsTable,
+  monthsTable,
   secretKeysTable,
+  subscriptionCyclesTable,
   usersTable,
 } from "./db/schema.js";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
 import auth from "./routes/auth.js";
 import apps from "./routes/apps.js";
 import forms from "./routes/forms.js";
 import secretKeys from "./routes/secret-keys.js";
 import checkout from "./routes/checkout.js";
+import webhook from "./routes/webhook.js";
+import customerPortal from "./routes/customer-portal.js";
 import { hashSecretKey } from "./lib/secret-key.js";
 import z from "zod";
 import { zValidator } from "@hono/zod-validator";
@@ -34,6 +39,7 @@ import {
   sendVerificationEmail,
 } from "./lib/email-verification.js";
 import { hashPassword } from "./lib/password.js";
+import { add } from "date-fns";
 
 const app = new Hono<{ Variables: { user: User; session: Session } }>();
 
@@ -77,6 +83,8 @@ app.get("/", (c) => {
 });
 
 app.route("/", auth);
+app.route("/", checkout);
+app.route("/", webhook);
 
 // Submit form
 app.post("forms/:formId", async (c) => {
@@ -98,17 +106,103 @@ app.post("forms/:formId", async (c) => {
         url: appsTable.url,
         userId: appsTable.userId,
       },
+      pricingPlan: usersTable.pricingPlan,
     })
     .from(formsTable)
     .where(eq(formsTable.id, formId))
-    .innerJoin(appsTable, eq(appsTable.id, formsTable.appId));
-
+    .innerJoin(appsTable, eq(appsTable.id, formsTable.appId))
+    .innerJoin(usersTable, eq(usersTable.id, appsTable.userId))
+    .limit(1);
   if (!form) {
     c.status(404);
     return c.json({
       error: "not-found",
       message: "Form not found",
     });
+  }
+
+  const subId = await db.transaction(async (tx) => {
+    let [subscriptionCycle] = await tx
+      .select()
+      .from(subscriptionCyclesTable)
+      .where(
+        and(
+          eq(subscriptionCyclesTable.userId, form.app.userId),
+          lte(subscriptionCyclesTable.startDate, new Date()),
+          gte(subscriptionCyclesTable.endDate, new Date()),
+        ),
+      )
+      .orderBy(desc(subscriptionCyclesTable.endDate))
+      .limit(1);
+
+    if (!subscriptionCycle) {
+      [subscriptionCycle] = await tx
+        .insert(subscriptionCyclesTable)
+        .values({
+          userId: form.app.userId,
+          startDate: new Date(),
+          endDate: add(new Date(), { months: 1 }),
+        })
+        .returning();
+
+      await tx.insert(monthsTable).values({
+        subscriptionCycleId: subscriptionCycle.id,
+        startDate: subscriptionCycle.startDate,
+        endDate: subscriptionCycle.endDate,
+      });
+    }
+
+    return subscriptionCycle.id;
+  });
+
+  const [latestMonth] = await db
+    .select()
+    .from(monthsTable)
+    .where(eq(monthsTable.subscriptionCycleId, subId))
+    .orderBy(desc(monthsTable.endDate))
+    .limit(1);
+
+  let [formResponsesUsage] = await db
+    .select()
+    .from(formResponsesUsageTable)
+    .where(eq(formResponsesUsageTable.monthId, latestMonth.id));
+
+  if (!formResponsesUsage) {
+    [formResponsesUsage] = await db
+      .insert(formResponsesUsageTable)
+      .values({
+        monthId: latestMonth.id,
+        userId: form.app.userId,
+        usageCount: 1,
+      })
+      .returning();
+  } else {
+    if (form.pricingPlan === "free" && formResponsesUsage.usageCount >= 100) {
+      c.status(429);
+      return c.json({
+        error: "limit-reached",
+        message:
+          "You have reached the limit of form submissions in the Free plan.",
+      });
+    }
+
+    if (
+      form.pricingPlan === "launch" &&
+      formResponsesUsage.usageCount >= 1000
+    ) {
+      c.status(429);
+      return c.json({
+        error: "limit-reached",
+        message:
+          "You have reached the limit of form submissions in the Launch plan.",
+      });
+    }
+    await db
+      .update(formResponsesUsageTable)
+      .set({
+        usageCount: formResponsesUsage.usageCount + 1,
+      })
+      .where(eq(formResponsesUsageTable.id, formResponsesUsage.id));
   }
 
   const defaultFailureUrl = "https://devmatter.app/forms/failure";
@@ -383,6 +477,47 @@ app.use(async (c, next) => {
     });
   }
 
+  await db.transaction(async (tx) => {
+    const [subscriptionCycle] = await tx
+      .select()
+      .from(subscriptionCyclesTable)
+      .where(
+        and(
+          eq(subscriptionCyclesTable.userId, user.id),
+          lte(subscriptionCyclesTable.startDate, new Date()),
+          gte(subscriptionCyclesTable.endDate, new Date()),
+        ),
+      )
+      .orderBy(desc(subscriptionCyclesTable.endDate))
+      .limit(1);
+
+    if (!subscriptionCycle) {
+      const [newCycle] = await tx
+        .insert(subscriptionCyclesTable)
+        .values({
+          userId: user.id,
+          startDate: new Date(),
+          endDate: add(new Date(), { months: 1 }),
+        })
+        .returning();
+
+      await tx.insert(monthsTable).values({
+        subscriptionCycleId: newCycle.id,
+        startDate: newCycle.startDate,
+        endDate: newCycle.endDate,
+      });
+
+      await tx
+        .update(usersTable)
+        .set({
+          pricingPlan: "free",
+        })
+        .where(eq(usersTable.id, user.id));
+
+      user.pricingPlan = "free";
+    }
+  });
+
   c.set("user", user);
   c.set("session", session);
 
@@ -430,7 +565,7 @@ app.post(
 app.route("/", apps);
 app.route("/", forms);
 app.route("/", secretKeys);
-app.route("/", checkout);
+app.route("/", customerPortal);
 
 app.post(
   "/verify-email",

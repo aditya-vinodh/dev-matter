@@ -5,7 +5,7 @@ import { zValidator } from "@hono/zod-validator";
 import z from "zod";
 import { appsTable, formsTable, secretKeysTable } from "../db/schema.js";
 import { db } from "../db/index.js";
-import { eq } from "drizzle-orm";
+import { count, eq } from "drizzle-orm";
 
 const app = new Hono<{ Variables: { user: User; session: Session } }>();
 
@@ -18,6 +18,27 @@ app.post(
   async (c) => {
     const user = c.get("user");
     const { name, url } = c.req.valid("json");
+
+    const [appCount] = await db
+      .select({ count: count() })
+      .from(appsTable)
+      .where(eq(appsTable.userId, user.id));
+
+    if (user.pricingPlan === "free" && appCount.count >= 1) {
+      c.status(400);
+      return c.json({
+        error: "limit-reached",
+        message: "You have reached the limit of app on the Free plan.",
+      });
+    }
+
+    if (user.pricingPlan === "launch" && appCount.count >= 5) {
+      c.status(400);
+      return c.json({
+        error: "limit-reached",
+        message: "You have reached the limit of apps on the Launch plan.",
+      });
+    }
 
     const [app] = await db
       .insert(appsTable)

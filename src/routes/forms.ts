@@ -10,7 +10,7 @@ import {
   formsTable,
   formVersionsTable,
 } from "../db/schema.js";
-import { eq, inArray, desc, and } from "drizzle-orm";
+import { eq, inArray, desc, and, count } from "drizzle-orm";
 import { success } from "zod/v4";
 
 const app = new Hono<{ Variables: { user: User; session: Session } }>();
@@ -37,6 +37,28 @@ app.post(
       return c.json({
         error: "forbidden",
         message: "You are not allowed to access this app",
+      });
+    }
+
+    const [forms] = await db
+      .select({ count: count() })
+      .from(appsTable)
+      .where(eq(appsTable.userId, user.id))
+      .innerJoin(formsTable, eq(formsTable.appId, appsTable.id));
+
+    if (user.pricingPlan === "free" && forms.count >= 2) {
+      c.status(400);
+      return c.json({
+        error: "limit-reached",
+        message: "You have reached the limit of forms for your plan.",
+      });
+    }
+
+    if (user.pricingPlan === "launch" && forms.count >= 20) {
+      c.status(400);
+      return c.json({
+        error: "limit-reached",
+        message: "You have reached the limit of forms for your plan.",
       });
     }
 
