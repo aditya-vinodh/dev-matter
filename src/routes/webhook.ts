@@ -6,7 +6,7 @@ import {
   subscriptionCyclesTable,
   usersTable,
 } from "../db/schema.js";
-import { and, desc, eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 
 const app = new Hono();
 
@@ -17,9 +17,9 @@ app.post(
     onPayload: async (payload) => {
       let userId: number;
       switch (payload.type) {
-        case "order.created":
+        case "subscription.updated":
           userId = parseInt(payload.data.customer.externalId || "");
-          const interval = payload.data.subscription?.recurringInterval;
+          const interval = payload.data.recurringInterval;
 
           if (!interval) {
             break;
@@ -35,8 +35,8 @@ app.post(
             break;
           }
 
-          const start = payload.data.subscription?.currentPeriodStart;
-          const end = payload.data.subscription?.currentPeriodEnd;
+          const start = payload.data.currentPeriodStart;
+          const end = payload.data.currentPeriodEnd;
 
           if (!start || !end) {
             break;
@@ -82,7 +82,23 @@ app.post(
                 endDate: newCycle.endDate,
               });
             } else {
-              // TODO
+              const monthsToInsert = [];
+              let currentStartDate = new Date(newCycle.startDate);
+
+              for (let i = 0; i < 12; i++) {
+                const monthEndDate = new Date(currentStartDate);
+                monthEndDate.setMonth(monthEndDate.getMonth() + 1);
+
+                monthsToInsert.push({
+                  subscriptionCycleId: newCycle.id,
+                  startDate: currentStartDate,
+                  endDate: monthEndDate,
+                });
+
+                currentStartDate = monthEndDate;
+              }
+
+              await tx.insert(monthsTable).values(monthsToInsert);
             }
           });
 
