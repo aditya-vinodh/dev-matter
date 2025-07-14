@@ -9,9 +9,11 @@ import {
   formResponsesTable,
   formsTable,
   formVersionsTable,
+  usersTable,
 } from "../db/schema.js";
-import { eq, inArray, desc, and, count } from "drizzle-orm";
+import { eq, inArray, desc, and, count, sql } from "drizzle-orm";
 import { success } from "zod/v4";
+import { deleteFile, deleteFiles, getSignedUrl } from "../lib/s3.js";
 
 const app = new Hono<{ Variables: { user: User; session: Session } }>();
 
@@ -153,6 +155,18 @@ app.get("/forms/:formId", async (c) => {
     .limit(limit)
     .offset((page - 1) * limit);
 
+  for (const response of formResponses) {
+    const json = response.response as Object;
+
+    for (const value of Object.values(json)) {
+      if (typeof value === "object" && value.type === "files") {
+        for (const file of value.files) {
+          file.url = getSignedUrl(file.key);
+        }
+      }
+    }
+  }
+
   return c.json({ ...form, versions: formVersions, responses: formResponses });
 });
 
@@ -170,7 +184,7 @@ app.patch(
         .array(
           z.object({
             id: z.string().min(1),
-            type: z.enum(["string", "number"]),
+            type: z.enum(["string", "number", "files"]),
             label: z.string().min(1),
             required: z.union([z.string(), z.boolean()]).optional(),
           }),
@@ -343,6 +357,61 @@ app.delete("/forms/:formId", async (c) => {
     });
   }
 
+  const formVersions = await db
+    .select()
+    .from(formVersionsTable)
+    .where(eq(formVersionsTable.formId, formId));
+
+  let storageConsumed = 0;
+
+  let i = 0;
+  let responses = await db
+    .select()
+    .from(formResponsesTable)
+    .where(
+      inArray(
+        formResponsesTable.formVersionId,
+        formVersions.map((v) => v.id),
+      ),
+    )
+    .limit(100);
+  while (responses.length > 0) {
+    const files = [];
+    for (const response of responses) {
+      const json = response.response as Object;
+
+      for (const value of Object.values(json)) {
+        if (typeof value === "object" && value.type === "files") {
+          for (const file of value.files) {
+            files.push(file.key);
+            storageConsumed += file.size;
+          }
+        }
+      }
+    }
+
+    await deleteFiles(files);
+    i++;
+    responses = await db
+      .select()
+      .from(formResponsesTable)
+      .where(
+        inArray(
+          formResponsesTable.formVersionId,
+          formVersions.map((v) => v.id),
+        ),
+      )
+      .limit(100)
+      .offset(i * 100);
+  }
+
+  await db
+    .update(usersTable)
+    .set({
+      fileStorageSize: sql`${usersTable.fileStorageSize} - ${storageConsumed}`,
+    })
+    .where(eq(usersTable.id, form.app.userId));
+
   await db.delete(formsTable).where(eq(formsTable.id, formId));
 
   return c.json({
@@ -443,6 +512,28 @@ app.delete("/responses/:responseId", async (c) => {
       message: "You are not authorized to access this resource",
     });
   }
+
+  const json = response.response.response as Object;
+
+  let storageConsumed = 0;
+
+  for (const value of Object.values(json)) {
+    if (typeof value === "object" && value.type === "files") {
+      storageConsumed += value.files.reduce((acc, file) => acc + file.size, 0);
+      await Promise.all(
+        value.files.map(async (file: { key: string }) => {
+          await deleteFile(file.key);
+        }),
+      );
+    }
+  }
+
+  await db
+    .update(usersTable)
+    .set({
+      fileStorageSize: sql`${usersTable.fileStorageSize} - ${storageConsumed}`,
+    })
+    .where(eq(usersTable.id, response.app.userId));
 
   await db
     .delete(formResponsesTable)

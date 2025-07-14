@@ -41,6 +41,7 @@ import {
 } from "./lib/email-verification.js";
 import { hashPassword } from "./lib/password.js";
 import { add } from "date-fns";
+import { uploadFile } from "./lib/s3.js";
 
 const app = new Hono<{ Variables: { user: User; session: Session } }>();
 
@@ -122,6 +123,7 @@ app.post(
           userId: appsTable.userId,
         },
         pricingPlan: usersTable.pricingPlan,
+        fileStorageSize: usersTable.fileStorageSize,
       })
       .from(formsTable)
       .where(eq(formsTable.id, formId))
@@ -339,12 +341,18 @@ app.post(
         const body = await c.req.json();
         response = body;
       } else {
-        const body = await c.req.parseBody();
+        const body = await c.req.parseBody({ all: true });
         response = body;
       }
 
-      for (const [key, _] of Object.entries(response)) {
-        if (!fields.find((field) => field.id === key)) {
+      let error = false;
+      const reqEntries = Object.entries(response);
+
+      let additionalStorageToBeConsumed = 0;
+
+      for (const [key, value] of reqEntries) {
+        const field = fields.find((field) => field.id === key);
+        if (!field) {
           if (form.redirectOnSubmit) {
             return c.redirect(
               `${form.failureUrl || defaultFailureUrl}?error=invalid_field`,
@@ -359,14 +367,104 @@ app.post(
           }
         }
 
-        if (typeof response[key] === "string" && response[key] === "") {
-          delete response[key];
+        if (typeof value === "string") {
+          console.log("value is string");
+          if (field.type !== "string" && field.type !== "number") {
+            error = true;
+            continue;
+          }
+
+          if (value === "") {
+            delete response[key];
+            continue;
+          }
+
+          if (field.type === "number") {
+            console.log("value is supposed to be number");
+            if (value === "") {
+              delete response[key];
+              continue;
+            }
+
+            const parsedNumber = Number(value);
+            if (Number.isNaN(parsedNumber)) {
+              error = true;
+              continue;
+            }
+
+            response[key] = parsedNumber;
+          }
+        } else if (typeof value === "number") {
+          if (field.type !== "number") {
+            error = true;
+            continue;
+          }
+        } else if (value instanceof File) {
+          if (field.type !== "files") {
+            error = true;
+            continue;
+          }
+          additionalStorageToBeConsumed += value.size;
+        } else if (
+          Array.isArray(value) &&
+          value.every((item) => item instanceof File)
+        ) {
+          if (field.type !== "files") {
+            error = true;
+            continue;
+          }
+
+          additionalStorageToBeConsumed += value.reduce(
+            (acc, file) => acc + file.size,
+            0,
+          );
+        } else {
+          error = true;
+          continue;
         }
       }
+
+      if (error) {
+        if (form.redirectOnSubmit) {
+          return c.redirect(
+            `${form.failureUrl || defaultFailureUrl}?error=invalid_field`,
+            303,
+          );
+        } else {
+          c.status(400);
+          return c.json({
+            error: "invalid-submission",
+            message: "Does not match schema",
+          });
+        }
+      }
+
+      if (
+        (form.pricingPlan === "free" &&
+          form.fileStorageSize + additionalStorageToBeConsumed >
+            1024 * 1024 * 1024) ||
+        (form.pricingPlan === "launch" &&
+          form.fileStorageSize + additionalStorageToBeConsumed >
+            1024 * 1024 * 1024 * 200)
+      ) {
+        if (form.redirectOnSubmit) {
+          return c.redirect(
+            `${form.failureUrl || defaultFailureUrl}?error=storage_limit_exceeded`,
+            303,
+          );
+        } else {
+          c.status(400);
+          return c.json({
+            error: "storage-limit-exceeded",
+            message: `Storage limit exceeded: ${form.pricingPlan} plan users can only store up to ${form.pricingPlan === "free" ? "1" : "200"}GB of files.`,
+          });
+        }
+      }
+
       for (const field of fields.filter((field) => field.required === true)) {
-        const reqEntries = Object.entries(response);
         const foundEntry = reqEntries.find((entry) => entry[0] === field.id);
-        if (!foundEntry || typeof foundEntry[1] !== field.type) {
+
+        if (!foundEntry) {
           if (form.redirectOnSubmit) {
             return c.redirect(
               `${form.failureUrl || defaultFailureUrl}?error=invalid_type`,
@@ -380,6 +478,55 @@ app.post(
             });
           }
         }
+      }
+
+      for (const [key, value] of reqEntries) {
+        if (value instanceof File) {
+          const fileKey = crypto.randomUUID();
+          response[key] = {
+            type: "files",
+            files: [
+              {
+                name: value.name,
+                content_type: value.type,
+                size: value.size,
+                key: fileKey,
+              },
+            ],
+          };
+
+          const buffer = Buffer.from(await value.arrayBuffer());
+          await uploadFile(buffer, fileKey, value.type);
+        } else if (
+          Array.isArray(value) &&
+          value.every((item) => item instanceof File)
+        ) {
+          response[key] = {
+            type: "files",
+            files: value.map((file) => ({
+              name: file.name,
+              content_type: file.type,
+              size: file.size,
+              key: crypto.randomUUID(),
+            })),
+          };
+
+          for (let i = 0; i < value.length; i++) {
+            const file = value[i];
+            const buffer = Buffer.from(await file.arrayBuffer());
+            await uploadFile(buffer, response[key].files[i].key, file.type);
+          }
+        }
+      }
+
+      if (additionalStorageToBeConsumed > 0) {
+        await db
+          .update(usersTable)
+          .set({
+            fileStorageSize:
+              form.fileStorageSize + additionalStorageToBeConsumed,
+          })
+          .where(eq(usersTable.id, form.app.userId));
       }
     } else {
       c.status(400);

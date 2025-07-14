@@ -16,6 +16,7 @@ export const usersTable = pgTable("users", {
   pricingPlan: varchar({ length: 255 }).notNull().default("free"),
   passwordHash: varchar({ length: 255 }),
   emailVerified: boolean().notNull().default(false),
+  fileStorageSize: integer().notNull().default(0),
 });
 
 export const subscriptionCyclesTable = pgTable("subscription_cycles", {
