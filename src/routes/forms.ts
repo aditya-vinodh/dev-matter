@@ -519,6 +519,7 @@ app.delete("/responses/:responseId", async (c) => {
 
   for (const value of Object.values(json)) {
     if (typeof value === "object" && value.type === "files") {
+      //@ts-ignore
       storageConsumed += value.files.reduce((acc, file) => acc + file.size, 0);
       await Promise.all(
         value.files.map(async (file: { key: string }) => {

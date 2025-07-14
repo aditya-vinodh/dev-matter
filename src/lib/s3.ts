@@ -37,7 +37,7 @@ export const uploadFile = async (
 
 export const getSignedUrl = (key: string): string => {
   const signedUrl = _getSignedUrl({
-    url: `https://d18hfut33910f4.cloudfront.net/${key}`,
+    url: `${process.env.NODE_ENV === "production" ? "https://d2vsv7r60wv2iz.cloudfront.net" : "https://d18hfut33910f4.cloudfront.net"}/${key}`,
     keyPairId: process.env.CLOUDFRONT_KEY_PAIR_ID || "",
     dateLessThan: new Date(Date.now() + 60 * 60 * 1000), // Expires in 1 hour
     privateKey: process.env.CLOUDFRONT_PRIVATE_KEY || "",
